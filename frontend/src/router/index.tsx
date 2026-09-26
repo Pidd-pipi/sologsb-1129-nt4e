@@ -6,6 +6,7 @@ import MatrixDetail from '../pages/MatrixDetail';
 import CaseEditor from '../pages/CaseEditor';
 import DefectBoard from '../pages/DefectBoard';
 import ProofList from '../pages/ProofList';
+import StocktakeBoard from '../pages/StocktakeBoard';
 
 export const router = createBrowserRouter([
   {
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
       { path: 'matrices/new', element: <MatrixNew /> },
       { path: 'matrices/:id', element: <MatrixDetail /> },
       { path: 'cases', element: <CaseEditor /> },
+      { path: 'stocktakes', element: <StocktakeBoard /> },
       { path: 'defects', element: <DefectBoard /> },
       { path: 'proofs', element: <ProofList /> },
       { path: '*', element: <Navigate to="/" replace /> },

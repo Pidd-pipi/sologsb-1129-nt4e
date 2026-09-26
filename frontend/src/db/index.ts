@@ -5,6 +5,8 @@ import type { DefectSeverity, DefectType } from '../types/defect';
 import type { MatrixAvailability, MatrixFont, MatrixMaterial, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofRecord } from '../types/proof';
+import type { StocktakeItem, StocktakeRound } from '../types/stocktake';
+import { buildStocktakeItems } from '../types/stocktake';
 import { matrixIdsOf } from '../utils/layout';
 import { suggestCaseCode, suggestMatrixCode, toPlain } from '../utils/format';
 
@@ -15,12 +17,14 @@ export const DB_NAME = 'gbmovabletype-db';
  * v1 建 matrices
  * v2 加 cases 表与 matrixId 索引
  * v3 加 defects / proofs 表，并为停用字模回填缺损原因
+ * v4 加 stocktakes 表（盘点轮次与差异留档），历史数据原样保留
  */
 class MovableTypeDb extends Dexie {
   matrices!: Table<TypeMatrix, string>;
   cases!: Table<TypeCase, string>;
   defects!: Table<DefectLog, string>;
   proofs!: Table<ProofRecord, string>;
+  stocktakes!: Table<StocktakeRound, string>;
 
   constructor() {
     super(DB_NAME);
@@ -78,6 +82,14 @@ class MovableTypeDb extends Dexie {
           });
         }
       });
+    this.version(4).stores({
+      matrices: 'id, code, character, font, sizeName, material, availability',
+      cases: 'id, code, kind, workStation, *matrixId',
+      defects: 'id, matrixId, defectType, severity, availability, foundDate',
+      proofs: 'id, matrixId, sampleNo, clarity, proofDate',
+      // v4：盘点轮次表；既有字模 / 字盘 / 缺损 / 试印数据原样保留，无需回填
+      stocktakes: 'id, caseId, status, startedAt',
+    });
   }
 }
 
@@ -187,6 +199,42 @@ const SEED_PROOFS: SeedProof[] = [
   { id: 'pfr-3006', targetKind: '字符', targetRef: '纸', matrixId: 'm-1012', pressureKg: 9.5, ink: '松烟墨 08', impressions: 50, sampleNo: 'YZ-20250601-01', clarity: '清晰', proofDate: '2025-06-01', note: '' },
 ];
 
+/** 示例盘点：上一季 ZP-A-01 已结束的一轮（一条确认调账、一条保留账面），与当前落库布局一致 */
+function buildSeedStocktake(typeCase: TypeCase): StocktakeRound {
+  const startedAt = '2025-06-28T01:00:00.000Z';
+  const finishedAt = '2025-06-28T02:10:00.000Z';
+  const items: StocktakeItem[] = buildStocktakeItems(typeCase).map((item): StocktakeItem => {
+    if (item.row === 1 && item.col === 3) {
+      // B4 账面原录「模」(m-1008)，实盘为「铜」，确认调账后落为 m-1009
+      return {
+        ...item,
+        bookCharacter: '模',
+        bookMatrixId: 'm-1008',
+        actual: '铜',
+        resolution: '确认调账',
+        resolvedAt: finishedAt,
+      };
+    }
+    if (item.row === 0 && item.col === 3) {
+      // A4 盘点时误录为「改」，复核实物确为「刷」，保留账面
+      return { ...item, actual: '改', resolution: '保留账面', resolvedAt: finishedAt };
+    }
+    return { ...item, actual: item.bookCharacter };
+  });
+  return {
+    id: 'stk-4001',
+    caseId: typeCase.id,
+    caseCode: typeCase.code,
+    workStation: typeCase.workStation,
+    status: '已结束',
+    operator: '陈之安',
+    items,
+    startedAt,
+    finishedAt,
+    adjustedCount: 1,
+  };
+}
+
 function buildSeed() {
   const now = new Date().toISOString();
   const matrices: TypeMatrix[] = SEED_MATRICES.map((m) => ({
@@ -233,7 +281,8 @@ function buildSeed() {
     };
   });
   const proofs: ProofRecord[] = SEED_PROOFS.map((p) => ({ ...p, createdAt: now }));
-  return { matrices, cases, defects, proofs };
+  const stocktakes: StocktakeRound[] = [buildSeedStocktake(cases[0])];
+  return { matrices, cases, defects, proofs, stocktakes };
 }
 
 let seedPromise: Promise<void> | null = null;
@@ -242,11 +291,12 @@ async function doSeed(): Promise<void> {
   const count = await db.matrices.count();
   if (count > 0) return;
   const seed = toPlain(buildSeed());
-  await db.transaction('rw', db.matrices, db.cases, db.defects, db.proofs, async () => {
+  await db.transaction('rw', db.matrices, db.cases, db.defects, db.proofs, db.stocktakes, async () => {
     await db.matrices.bulkPut(seed.matrices);
     await db.cases.bulkPut(seed.cases);
     await db.defects.bulkPut(seed.defects);
     await db.proofs.bulkPut(seed.proofs);
+    await db.stocktakes.bulkPut(seed.stocktakes);
   });
 }
 
