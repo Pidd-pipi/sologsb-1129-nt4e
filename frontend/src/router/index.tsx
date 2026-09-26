@@ -4,6 +4,7 @@ import Overview from '../pages/Overview';
 import MatrixNew from '../pages/MatrixNew';
 import MatrixDetail from '../pages/MatrixDetail';
 import CaseEditor from '../pages/CaseEditor';
+import Inventory from '../pages/Inventory';
 import DefectBoard from '../pages/DefectBoard';
 import ProofList from '../pages/ProofList';
 
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
       { path: 'matrices/new', element: <MatrixNew /> },
       { path: 'matrices/:id', element: <MatrixDetail /> },
       { path: 'cases', element: <CaseEditor /> },
+      { path: 'stocktakes', element: <Inventory /> },
       { path: 'defects', element: <DefectBoard /> },
       { path: 'proofs', element: <ProofList /> },
       { path: '*', element: <Navigate to="/" replace /> },

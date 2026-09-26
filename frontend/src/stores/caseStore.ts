@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { db, ensureSeed } from '../db';
+import { useInventoryStore } from './inventoryStore';
 import type { CaseInput, CaseSlot, TypeCase } from '../types/case';
 import { capacityOf } from '../types/case';
 import { makeId, toPlain } from '../utils/format';
@@ -75,6 +76,9 @@ export const useCaseStore = create<CaseState>((set, get) => ({
   saveSlots: async (id, slots) => {
     const current = get().cases.find((c) => c.id === id);
     if (!current) throw new Error('未找到字盘');
+    if (useInventoryStore.getState().rounds.some((r) => r.caseId === id && r.status === 'open')) {
+      throw new Error('该字盘正在逐格盘点，布局已锁定，请先到「逐格盘点」结束后再保存布局');
+    }
     const check = validateCapacity(current.rows, current.cols, slots);
     if (check.overCapacity) throw new Error(check.message);
     const plainSlots = toPlain(slots);

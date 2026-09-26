@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { CaseSlot, TypeCase } from '../types/case';
 import type { DefectLog } from '../types/defect';
 import type { DefectSeverity, DefectType } from '../types/defect';
+import type { StocktakeRound } from '../types/inventory';
 import type { MatrixAvailability, MatrixFont, MatrixMaterial, TypeMatrix } from '../types/matrix';
 import { ptOfSize } from '../types/matrix';
 import type { ProofRecord } from '../types/proof';
@@ -15,12 +16,14 @@ export const DB_NAME = 'gbmovabletype-db';
  * v1 建 matrices
  * v2 加 cases 表与 matrixId 索引
  * v3 加 defects / proofs 表，并为停用字模回填缺损原因
+ * v4 加 stocktakes 盘点表（逐格盘点清单与差异历史）；纯新增表，不动旧档案
  */
 class MovableTypeDb extends Dexie {
   matrices!: Table<TypeMatrix, string>;
   cases!: Table<TypeCase, string>;
   defects!: Table<DefectLog, string>;
   proofs!: Table<ProofRecord, string>;
+  stocktakes!: Table<StocktakeRound, string>;
 
   constructor() {
     super(DB_NAME);
@@ -78,6 +81,14 @@ class MovableTypeDb extends Dexie {
           });
         }
       });
+    // v4：新增逐格盘点表。旧库（v1–v3）升级时只建表，不改动既有字盘 / 字模 / 缺损 / 试印档案
+    this.version(4).stores({
+      matrices: 'id, code, character, font, sizeName, material, availability',
+      cases: 'id, code, kind, workStation, *matrixId',
+      defects: 'id, matrixId, defectType, severity, availability, foundDate',
+      proofs: 'id, matrixId, sampleNo, clarity, proofDate',
+      stocktakes: 'id, code, caseId, status, createdAt, closedAt',
+    });
   }
 }
 

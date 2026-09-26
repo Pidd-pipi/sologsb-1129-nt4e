@@ -7,6 +7,7 @@ import { DRAFT_KEYS, useLocalDraft } from '../hooks/useLocalDraft';
 import { useCaseSlots } from '../hooks/useCaseSlots';
 import { useMatrixSearch } from '../hooks/useMatrixSearch';
 import { useCaseStore } from '../stores/caseStore';
+import { useInventoryStore } from '../stores/inventoryStore';
 import { useUiStore } from '../stores/uiStore';
 import type { CaseKind, CaseSlot, TypeCase } from '../types/case';
 import { CASE_KINDS, COL_RANGE, ROW_RANGE, describeCapacity, validateCaseInput } from '../types/case';
@@ -35,6 +36,10 @@ export default function CaseEditor() {
   const selected = useMemo(
     () => cases.find((c) => c.id === selectedCaseId) ?? cases[0],
     [cases, selectedCaseId],
+  );
+
+  const lockedRound = useInventoryStore((s) =>
+    selected ? s.rounds.find((r) => r.caseId === selected.id && r.status === 'open') : undefined,
   );
 
   useEffect(() => {
@@ -213,7 +218,11 @@ export default function CaseEditor() {
         </aside>
 
         {selected ? (
-          <CaseLayoutEditor key={selected.id} typeCase={selected} />
+          lockedRound ? (
+            <LockedCaseView typeCase={selected} roundCode={lockedRound.code} />
+          ) : (
+            <CaseLayoutEditor key={selected.id} typeCase={selected} />
+          )
         ) : (
           <EmptyState
             title="尚未选择字盘"
@@ -539,4 +548,62 @@ function parseKey(key: string): RCCell | null {
   const col = Number(c);
   if (!Number.isInteger(row) || !Number.isInteger(col)) return null;
   return { row, col };
+}
+
+/** 盘点进行中的字盘：布局只读锁定，引导保管员回到逐格盘点完成核对 */
+function LockedCaseView({ typeCase, roundCode }: { typeCase: TypeCase; roundCode: string }) {
+  const progress = useInventoryStocktakeProgress(typeCase.id);
+  return (
+    <section className="space-y-3" data-testid="case-locked-view">
+      <div className="mt-panel">
+        <div className="mt-panel-head">
+          <div>
+            <h3 className="font-song text-sm font-semibold text-ink">
+              {typeCase.code} · {typeCase.kind}
+            </h3>
+            <p className="mt-sub">
+              {describeCapacity(typeCase.rows, typeCase.cols)} · 工位 {typeCase.workStation}
+            </p>
+          </div>
+        </div>
+        <div className="border-b border-seal/30 bg-seal-pale/60 px-4 py-3" data-testid="case-lock-banner">
+          <p className="text-sm text-seal">
+            该字盘正在逐格盘点（批次 {roundCode}
+            {progress ? ` · 已盘 ${progress.checked}/${progress.total}` : ''}），布局已锁定，落位 / 取出 / 调换均暂停。
+          </p>
+          <p className="mt-1 text-[11px] text-seal/80">
+            请先到「逐格盘点」录完实盘并处理完所有差异、结束盘点；只有确认的调账会写回本字盘，其它字盘与字模档案不受影响。
+          </p>
+          <Link className="mt-btn mt-btn-primary mt-2 inline-flex" to="/stocktakes" data-testid="case-lock-goto">
+            前往逐格盘点
+          </Link>
+        </div>
+        <div className="px-4 py-3">
+          <LayoutGrid
+            rows={typeCase.rows}
+            cols={typeCase.cols}
+            slots={typeCase.slots}
+            readOnly
+            testIdPrefix="locked-slot"
+          />
+          <p className="mt-2 text-[11px] text-ink-mute">
+            当前展示为发起盘点时冻结的账面快照；盘点结束并应用确认调账后，这里才会更新。
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** 取某字盘进行中盘点的格位进度（锁定横幅用） */
+function useInventoryStocktakeProgress(caseId: string) {
+  const round = useInventoryStore((s) => s.rounds.find((r) => r.caseId === caseId && r.status === 'open'));
+  if (!round) return null;
+  let checked = 0;
+  let diffs = 0;
+  for (const c of round.cells) {
+    if (c.result !== 'pending') checked += 1;
+    if (c.result === 'diff') diffs += 1;
+  }
+  return { checked, total: round.cells.length, diffs };
 }
